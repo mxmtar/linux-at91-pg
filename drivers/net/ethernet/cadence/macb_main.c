@@ -3988,7 +3988,9 @@ static const struct macb_config sama5d2_config = {
 	.dma_burst_length = 16,
 	.clk_init = macb_clk_init,
 	.init = macb_init,
+#ifdef CONFIG_PM
 	.pm = &macb_sama5d2_pm,
+#endif
 };
 
 static const struct macb_config sama5d3_config = {
