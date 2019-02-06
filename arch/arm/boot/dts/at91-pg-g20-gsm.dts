@@ -1,0 +1,192 @@
+/*
+ * at91-pg-g20-gsm.dts - Device Tree file for Polygator G20 GSM board
+ *
+ * Based on DT files for at91sam9g20ek evaluation board (AT91SAM9G20 SoC)
+ *
+ * Copyright (C) 2018 Maksym Tarasevych <mxmtar@gmail.com>
+ *
+ * Licensed under GPLv2 or later.
+ */
+/dts-v1/;
+#include "at91sam9g20.dtsi"
+
+/ {
+	model = "Polygator G20 GSM";
+	compatible = "polygator,g20gsm", "atmel,at91sam9g20", "atmel,at91sam9";
+
+    chosen {
+		bootargs = "mem=128M console=ttyS0,115200 noinitrd rootdelay=10 root=/dev/sda1";
+		stdout-path = "serial0:115200n8";
+	};
+
+    clocks {
+		slow_xtal {
+			clock-frequency = <32768>;
+		};
+
+		main_xtal {
+			clock-frequency = <18432000>;
+		};
+	};
+
+	ahb {
+		apb {
+			pinctrl@fffff400 {
+				board {
+					pinctrl_pck0_as_mck: pck0_as_mck {
+						atmel,pins = <AT91_PIOC 1 AT91_PERIPH_B AT91_PINCTRL_NONE>;	/* PC1 periph B */
+					};
+					pinctrl_ebi_cs3: ebi-cs3-0 {
+                        atmel,pins = <AT91_PIOC 14 AT91_PERIPH_A AT91_PINCTRL_PULL_UP>;
+                    };
+				};
+			};
+
+			dbgu: serial@fffff200 {
+				status = "okay";
+			};
+
+			tcb0: timer@fffa0000 {
+				timer@0 {
+					compatible = "atmel,tcb-timer";
+					reg = <0>, <1>;
+				};
+
+				timer@2 {
+					compatible = "atmel,tcb-timer";
+					reg = <2>;
+				};
+			};
+
+			usart0: serial@fffb0000 {
+				pinctrl-0 =
+					<&pinctrl_usart0
+					 &pinctrl_usart0_rts
+					 &pinctrl_usart0_cts
+					 &pinctrl_usart0_dtr_dsr
+					 &pinctrl_usart0_dcd
+					 &pinctrl_usart0_ri>;
+				status = "okay";
+			};
+
+			usart1: serial@fffb4000 {
+				status = "okay";
+			};
+
+			macb0: ethernet@fffc4000 {
+				phy-mode = "rmii";
+				status = "okay";
+			};
+
+			usb1: gadget@fffa4000 {
+				atmel,vbus-gpio = <&pioC 5 GPIO_ACTIVE_HIGH>;
+				status = "okay";
+			};
+
+			spi0: spi@fffc8000 {
+				cs-gpios = <0>, <&pioC 11 0>, <0>, <0>;
+				mtd_dataflash@0 {
+					compatible = "atmel,at45", "atmel,dataflash";
+					spi-max-frequency = <50000000>;
+					reg = <1>;
+				};
+			};
+
+			shdwc@fffffd10 {
+				atmel,wakeup-counter = <10>;
+				atmel,wakeup-rtt-timer;
+			};
+
+			rtc@fffffd20 {
+				atmel,rtt-rtc-time-reg = <&gpbr 0x0>;
+				status = "okay";
+			};
+
+			watchdog@fffffd40 {
+				status = "okay";
+			};
+
+			gpbr: syscon@fffffd50 {
+				status = "okay";
+			};
+		};
+
+        ebi: ebi@10000000 {
+            status = "okay";
+
+            pinctrl-names = "default";
+
+            gx {
+                compatible = "polygator,gx";
+                pinctrl-0 = <&pinctrl_ebi_cs3>;
+                pinctrl-names = "default";
+                reg = <0x3 0x0 0x10000>;
+                atmel,smc-bus-width = <16>;
+                atmel,smc-tdf-ns = <16>;
+                atmel,smc-byte-access-type = "select"; /* write */
+                atmel,smc-read-mode = "nrd";
+                atmel,smc-write-mode = "nwe";
+                atmel,smc-exnw-mode = "disabled";
+                atmel,smc-page-mode = <4>;
+                atmel,smc-ncs-rd-setup-ns = <8>;
+                atmel,smc-ncs-wr-setup-ns = <8>;
+                atmel,smc-nrd-setup-ns = <24>;
+                atmel,smc-nwe-setup-ns = <24>;
+                atmel,smc-ncs-rd-pulse-ns = <120>;
+                atmel,smc-ncs-wr-pulse-ns = <120>;
+                atmel,smc-nrd-pulse-ns = <96>;
+                atmel,smc-nwe-pulse-ns = <96>;
+                atmel,smc-nrd-cycle-ns = <160>;
+                atmel,smc-nwe-cycle-ns = <160>;
+                status = "okay";
+            };
+        };
+
+		usb0: ohci@500000 {
+			num-ports = <2>;
+			status = "okay";
+		};
+	};
+
+	i2c-gpio-0 {
+		status = "okay";
+
+		24c512@50 {
+			compatible = "24c512";
+			reg = <0x50>;
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		btn3 {
+			label = "Button 3";
+			gpios = <&pioA 30 GPIO_ACTIVE_LOW>;
+			linux,code = <0x103>;
+			wakeup-source;
+		};
+
+		btn4 {
+			label = "Button 4";
+			gpios = <&pioA 31 GPIO_ACTIVE_LOW>;
+			linux,code = <0x104>;
+			wakeup-source;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		ds1 {
+			label = "ds1";
+			gpios = <&pioA 9 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+		};
+
+		ds5 {
+			label = "ds5";
+			gpios = <&pioA 6 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
