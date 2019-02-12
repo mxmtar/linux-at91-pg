@@ -611,7 +611,7 @@ static int gx_board_open(struct inode *inode, struct file *filp)
 
     len = 0;
 
-    len += sprintf(private_data->buff + len, "{\r\n\t\"hardware\": gx,");
+    len += sprintf(private_data->buff + len, "{\r\n\t\"hardware\": \"gx\",");
 
     len += sprintf(private_data->buff + len, "\r\n\t\"rom\": \"%s\",", &brd->rom[2]);
 
@@ -651,44 +651,45 @@ static int gx_board_open(struct inode *inode, struct file *filp)
     len += sprintf(private_data->buff + len, "\r\n\t],");
     /* vinetic */
     len += sprintf(private_data->buff + len, "\r\n\t\"vinetic\": [");
-	for (i = 0; i < 2; ++i) {
-		if (brd->vinetics[i]) {
-			len += sprintf(private_data->buff + len, "%s\r\n\t\t{\r\n\t\t\t\"path\": \"%s\",",
-							i ? "," : "",
+    for (i = 0; i < 2; ++i) {
+        if (brd->vinetics[i]) {
+            len += sprintf(private_data->buff + len, "%s\r\n\t\t{\r\n\t\t\t\"path\": \"%s\",",
+                            i ? "," : "",
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
-							dev_name(brd->vinetics[i]->device)
+                            dev_name(brd->vinetics[i]->device)
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
-							dev_name(brd->vinetics[i]->device)
+                            dev_name(brd->vinetics[i]->device)
 #else
-							brd->vinetics[i]->device->class_id
+                            brd->vinetics[i]->device->class_id
 #endif
-							);
-			len += sprintf(private_data->buff + len, "\r\n\t\t\t\"rtp\": [");
-			for (j = 0; j < 4; ++j) {
-				if (brd->vinetics[i]->rtp_channels[j])
-					len += sprintf(private_data->buff + len, "%s\r\n\t\t\t\t{\r\n\t\t\t\t\t\"path\": \"%s\"\r\n\t\t\t\t}",
-								j ? "," : "",
+                            );
+            len += sprintf(private_data->buff + len, "\r\n\t\t\t\"rtp\": [");
+            for (j = 0; j < 4; ++j) {
+                if (brd->vinetics[i]->rtp_channels[j])
+                    len += sprintf(private_data->buff + len, "%s\r\n\t\t\t\t{\r\n\t\t\t\t\t\"path\": \"%s\"\r\n\t\t\t\t}",
+                                j ? "," : "",
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
-								dev_name(brd->vinetics[i]->rtp_channels[j]->device)
+                                dev_name(brd->vinetics[i]->rtp_channels[j]->device)
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
-								dev_name(brd->vinetics[i]->rtp_channels[j]->device)
+                                dev_name(brd->vinetics[i]->rtp_channels[j]->device)
 #else
-								brd->vinetics[i]->rtp_channels[j]->device->class_id
+                                brd->vinetics[i]->rtp_channels[j]->device->class_id
 #endif
-								);
-			}
-			len += sprintf(private_data->buff + len, "\r\n\t\t\t]");
-		}
-		len += sprintf(private_data->buff + len, "\r\n\t\t}");
-	}
-	len += sprintf(private_data->buff + len, "\r\n\t]");
-	len += sprintf(private_data->buff + len, "\r\n}\r\n");
+                                );
+            }
+            len += sprintf(private_data->buff + len, "\r\n\t\t\t]");
+            len += sprintf(private_data->buff + len, "\r\n\t\t}");
+        }
+    }
+    len += sprintf(private_data->buff + len, "\r\n\t]");
 
-	private_data->length = len;
+    len += sprintf(private_data->buff + len, "\r\n}\r\n");
 
-	filp->private_data = private_data;
+    private_data->length = len;
 
-	return 0;
+    filp->private_data = private_data;
+
+    return 0;
 
 gx_open_error:
 	if (private_data) {
