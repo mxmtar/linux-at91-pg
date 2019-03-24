@@ -78,13 +78,15 @@ union gx_gsm_mod_control_reg {
 struct gx_board;
 struct gx_gsm_module_data {
 
-	int type;
-	size_t pos_on_board;
-	struct gx_board *board;
+    int type;
+    size_t pos_on_board;
+    struct gx_board *board;
 
-	union gx_gsm_mod_control_reg control;
+    spinlock_t lock;
+    union gx_gsm_mod_control_reg control;
+    int power_on_id;
 
-	uintptr_t cbdata;
+    uintptr_t cbdata;
 
 	void (* set_control)(uintptr_t cbdata, size_t pos, u_int8_t reg);
 	u_int8_t (* get_status)(uintptr_t cbdata, size_t pos);
@@ -98,9 +100,9 @@ struct gx_gsm_module_data {
 	void (* imei_write)(uintptr_t cbdata, size_t pos, u_int8_t reg);
 	u_int8_t (* imei_read)(uintptr_t cbdata, size_t pos);
 
-	// at section
-	int at_port_select;
-	spinlock_t at_lock;
+    /* at section */
+    int at_port_select;
+    spinlock_t at_lock;
 #ifdef TTY_PORT
 	struct tty_port at_port;
 #else
@@ -461,6 +463,20 @@ static void gx_sim_do_after_reset(void *data)
 	mod->sim_do_after_reset(mod->cbdata, mod->pos_on_board);
 }
 
+static void gx_power_on(void *cbdata)
+{
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)cbdata;
+
+    spin_lock(&mod->lock);
+
+    mod->power_on_id = -1;
+
+    mod->control.bits.vbat = 1;
+    mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
+
+    spin_unlock(&mod->lock);
+}
+
 static void gx_tty_at_poll(unsigned long addr)
 {
 	char buff[512];
@@ -748,56 +764,98 @@ static ssize_t gx_board_write(struct file *filp, const char __user *buff, size_t
 		goto gx_board_write_end;
 	}
 
-	if (sscanf(cmd, "channel[%u].power_supply(%u)", &chan, &value) == 2) {
-		if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
-			mod = private_data->board->gsm_modules[chan];
-			mod->control.bits.vbat = (value == 0) ? 1 : 0;
-			mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
-			res = len;
-		} else {
-			res= -ENODEV;
-		}
-	} else if (sscanf(cmd, "channel[%u].power_key(%u)", &chan, &value) == 2) {
-		if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
-			mod = private_data->board->gsm_modules[chan];
-			mod->control.bits.pkey = (value == 0) ? 1 : 0;
-			mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
-			res = len;
-		} else {
-			res= -ENODEV;
-		}
-	} else if (sscanf(cmd, "channel[%u].uart.baudrate(%u)", &chan, &value) == 2) {
-		if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
-			mod = private_data->board->gsm_modules[chan];
-			if (value == 9600) {
-				mod->control.bits.at_baudrate = 0;
-			} else {
-				mod->control.bits.at_baudrate = 2;
-			}
-			mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
-			res = len;
-		} else {
-			res= -ENODEV;
-		}
-	} else if (sscanf(cmd, "channel[%u].uart.port(%u)", &chan, &value) == 2) {
-		if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
-			mod = private_data->board->gsm_modules[chan];
-			mod->at_port_select = value;
-			res = len;
-		} else {
-			res = -ENODEV;
-		}
-	} else if (sscanf(cmd, "channel[%u].smart_card.enable(%u)", &chan, &value) == 2) {
-		iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * private_data->board->pos));
-		if (private_data->board->type == BOARD_TYPE_G8) {
-			iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * (private_data->board->pos + 1)));
-		}
-		res = len;
-	} else {
-		res = -ENOMSG;
-	}
+    if (sscanf(cmd, "channel[%u].power_supply(%u)", &chan, &value) == 2) {
+        if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
+
+            mod = private_data->board->gsm_modules[chan];
+
+            spin_lock_bh(&mod->lock);
+
+            if (value) {
+                if (mod->control.bits.vbat == 1) {
+                    if (mod->power_on_id == -1) {
+                        res = polygator_power_on_schedule(gx_power_on, mod);
+                        if (res >= 0) {
+                            mod->power_on_id = res;
+                            res = len;
+                        }
+                    } else {
+                        res = -EAGAIN;
+                    }
+                } else {
+                    res = len;
+                }
+            } else {
+                if (mod->power_on_id != -1) {
+                    polygator_power_on_cancel(mod->power_on_id);
+                    mod->power_on_id = -1;
+                }
+                mod->control.bits.vbat = 1;
+                mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
+                res = len;
+            }
+
+            spin_unlock_bh(&mod->lock);
+
+            res = len;
+        } else {
+            res= -ENODEV;
+        }
+    } else if (sscanf(cmd, "channel[%u].power_key(%u)", &chan, &value) == 2) {
+        if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
+
+            mod = private_data->board->gsm_modules[chan];
+
+            spin_lock_bh(&mod->lock);
+
+            mod->control.bits.pkey = (value == 0) ? 1 : 0;
+            mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
+
+            spin_unlock_bh(&mod->lock);
+
+            res = len;
+        } else {
+            res= -ENODEV;
+        }
+    } else if (sscanf(cmd, "channel[%u].uart.baudrate(%u)", &chan, &value) == 2) {
+        if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
+
+            mod = private_data->board->gsm_modules[chan];
+
+            spin_lock_bh(&mod->lock);
+
+            if (value == 9600) {
+                mod->control.bits.at_baudrate = 0;
+            } else {
+                mod->control.bits.at_baudrate = 2;
+            }
+            mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
+
+            spin_unlock_bh(&mod->lock);
+
+            res = len;
+        } else {
+            res= -ENODEV;
+        }
+    } else if (sscanf(cmd, "channel[%u].uart.port(%u)", &chan, &value) == 2) {
+        if ((chan >= 0) && (chan < private_data->board->channels_count) && (private_data->board->gsm_modules[chan])) {
+            mod = private_data->board->gsm_modules[chan];
+            mod->at_port_select = value;
+            res = len;
+        } else {
+            res = -ENODEV;
+        }
+    } else if (sscanf(cmd, "channel[%u].smart_card.enable(%u)", &chan, &value) == 2) {
+        iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * private_data->board->pos));
+        if (private_data->board->type == BOARD_TYPE_G8) {
+            iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * (private_data->board->pos + 1)));
+        }
+        res = len;
+    } else {
+        res = -ENOMSG;
+    }
 gx_board_write_end:
-	return res;
+    return res;
 }
 
 static struct file_operations gx_board_fops = {
@@ -1219,6 +1277,9 @@ static int gx_driver_probe(struct platform_device *pdev)
                 kfree(mod);
                 continue;
             }
+
+            spin_lock_init(&mod->lock);
+            mod->power_on_id = -1;
 
             mod->control.bits.vbat = 1;
             mod->control.bits.pkey = 1;
