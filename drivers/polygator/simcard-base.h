@@ -55,14 +55,14 @@ struct simcard_device {
     size_t (* read2)(void *cbdata, uint8_t *data, size_t length);
     void (* set_etu_count)(void *cbdata, uint32_t etu);
 
-    union simcard_data_status read_status;
 
-    int reset_state;
+    int reset;
+    bool reset_toggled;
 
     size_t write_room;
 
-    uint8_t sim_data[SIMCARD_MAX_DATA_LENGTH];
-    size_t sim_data_length;
+    uint8_t read_data[256];
+    size_t read_data_length;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
     struct device *device;

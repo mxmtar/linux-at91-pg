@@ -54,8 +54,8 @@ union gx_gsm_mod_status_reg {
 		u_int8_t status:1;
 		u_int8_t at_rd_empty:1;
 		u_int8_t at_wr_empty:1;
-		u_int8_t sim_rd_empty:1;
-		u_int8_t sim_wr_empty:1;
+		u_int8_t sim_rd_ready:1;
+		u_int8_t sim_wr_ready:1;
 		u_int8_t sim_rst_req:1;
 		u_int8_t imei_rd_empty:1;
 		u_int8_t imei_wr_empty:1;
@@ -294,6 +294,17 @@ static u_int8_t gx_gsm_mod_get_status(uintptr_t cbdata, size_t pos)
 	return ioread8(addr);
 }
 
+static void gx_gsm_mod_init_counters(uintptr_t cbdata, size_t pos)
+{
+    void __iomem *addr = (void __iomem *)cbdata;
+
+    iowrite8(0, addr + 0x3c);
+    iowrite8(0, addr + 0x3a);
+    iowrite8(0, addr + 0x38);
+    iowrite8(0, addr + 0x36);
+    iowrite8(0, addr + 0x34);
+}
+
 static void gx_gsm_mod_at_write(uintptr_t cbdata, size_t pos, u_int8_t reg)
 {
 	void __iomem *addr = (void __iomem *)cbdata;
@@ -309,7 +320,7 @@ static u_int8_t gx_gsm_mod_at_read(uintptr_t cbdata, size_t pos)
 	u_int8_t data;
 	void __iomem *addr = (void __iomem *)cbdata;
 
-	data =  ioread8(addr + 0x10);
+	data = ioread8(addr + 0x10);
 	iowrite8(0, addr + 0x3a);
 	iowrite8(1, addr + 0x3a);
 	iowrite8(0, addr + 0x3a);
@@ -344,123 +355,125 @@ static u_int16_t gx_gsm_mod_at_read_sim16(uintptr_t cbdata, size_t pos)
 
 static void gx_gsm_mod_sim_write(uintptr_t cbdata, size_t pos, u_int8_t reg)
 {
-	void __iomem *addr = (void __iomem *)cbdata;
+    void __iomem *addr = (void __iomem *)cbdata;
 
-	iowrite8(reg, addr + 0x20);
-	iowrite8(0, addr + 0x38);
-	iowrite8(1, addr + 0x38);
-	iowrite8(0, addr + 0x38);
+    iowrite8(reg, addr + 0x20);
+    iowrite8(0, addr + 0x38);
+    iowrite8(1, addr + 0x38);
 }
 
 static u_int8_t gx_gsm_mod_sim_read(uintptr_t cbdata, size_t pos)
 {
-	u_int8_t data;
-	void __iomem *addr = (void __iomem *)cbdata;
+    u_int8_t data;
+    void __iomem *addr = (void __iomem *)cbdata;
 
-	data =  ioread8(addr + 0x20);
-	iowrite8(0, addr + 0x28);
-	iowrite8(1, addr + 0x28);
-	iowrite8(0, addr + 0x28);
+    data = ioread8(addr + 0x20);
+    iowrite8(0, addr + 0x36);
+    iowrite8(1, addr + 0x36);
 
-	return data;
+    udelay(200);
+
+    return data;
 }
 
 static void gx_gsm_mod_sim_do_after_reset(uintptr_t cbdata, size_t pos)
 {
-	void __iomem *addr = (void __iomem *)cbdata;
+    void __iomem *addr = (void __iomem *)cbdata;
 
-	iowrite8(0x10, addr + 0x34);
-	iowrite8(0x00, addr + 0x34);
-	iowrite8(0x10, addr + 0x34);
+    iowrite8(0x10, addr + 0x34);
+    iowrite8(0x00, addr + 0x34);
+    iowrite8(0x10, addr + 0x34);
 }
 
 static void gx_gsm_mod_imei_write(uintptr_t cbdata, size_t pos, u_int8_t reg)
 {
-	void __iomem *addr = (void __iomem *)cbdata;
+    void __iomem *addr = (void __iomem *)cbdata;
 
-	iowrite8(reg, addr + 0x30);
+    iowrite8(reg, addr + 0x30);
 }
 
 static u_int8_t gx_gsm_mod_imei_read(uintptr_t cbdata, size_t pos)
 {
-	void __iomem *addr = (void __iomem *)cbdata;
+    void __iomem *addr = (void __iomem *)cbdata;
 
-	return ioread8(addr + 0x30);
+    return ioread8(addr + 0x30);
 }
 
 static u_int8_t gx_sim_read(void *data)
 {
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	return mod->sim_read(mod->cbdata, mod->pos_on_board);
+    return mod->sim_read(mod->cbdata, mod->pos_on_board);
 }
 
 static void gx_sim_write(void *data, u_int8_t value)
 {
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	mod->sim_write(mod->cbdata, mod->pos_on_board, value);
+    mod->sim_write(mod->cbdata, mod->pos_on_board, value);
 }
 
 static int gx_sim_is_read_ready(void *data)
 {
-	union gx_gsm_mod_status_reg status;
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    union gx_gsm_mod_status_reg status;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
+    status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
 
-	return status.bits.sim_rd_empty;
+    return status.bits.sim_rd_ready;
 }
 
 static int gx_sim_is_write_ready(void *data)
 {
-	union gx_gsm_mod_status_reg status;
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    union gx_gsm_mod_status_reg status;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
+    status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
 
-	return status.bits.sim_wr_empty;
+    return status.bits.sim_wr_ready;
 }
 
 static int gx_sim_is_reset_request(void *data)
 {
-	union gx_gsm_mod_status_reg status;
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    union gx_gsm_mod_status_reg status;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
+    status.full = mod->get_status(mod->cbdata, mod->pos_on_board);
 
-	return status.bits.sim_rst_req;
+    return status.bits.sim_rst_req;
 }
 
 static void gx_sim_set_speed(void *data, int speed)
 {
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	switch (speed) {
-		case 0x94:
-		case 57600:
-			mod->control.bits.cn_speed_a = 1;
-			mod->control.bits.cn_speed_b = 0;
-			break;
-		case 0x95:
-		case 115200:
-			mod->control.bits.cn_speed_a = 0;
-			mod->control.bits.cn_speed_b = 1;
-			break;
-		default: // 9600 
-			mod->control.bits.cn_speed_a = 0;
-			mod->control.bits.cn_speed_b = 0;
-			break;
-	}
+    switch (speed) {
+        case 0x94: case 57600:
+            mod->control.bits.cn_speed_a = 1;
+            mod->control.bits.cn_speed_b = 0;
+            break;
+        case 0x95: case 115200:
+            mod->control.bits.cn_speed_a = 0;
+            mod->control.bits.cn_speed_b = 1;
+            break;
+        case 0x96: case 230400:
+            mod->control.bits.cn_speed_a = 1;
+            mod->control.bits.cn_speed_b = 1;
+            break;
+        case 0x11: case 9600: default:
+            mod->control.bits.cn_speed_a = 0;
+            mod->control.bits.cn_speed_b = 0;
+            break;
+    }
 
-	mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
+    mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
 }
 
 static void gx_sim_do_after_reset(void *data)
 {
-	struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
+    struct gx_gsm_module_data *mod = (struct gx_gsm_module_data *)data;
 
-	mod->sim_do_after_reset(mod->cbdata, mod->pos_on_board);
+    mod->sim_do_after_reset(mod->cbdata, mod->pos_on_board);
 }
 
 static void gx_power_on(void *cbdata)
@@ -471,7 +484,7 @@ static void gx_power_on(void *cbdata)
 
     mod->power_on_id = -1;
 
-    mod->control.bits.vbat = 1;
+    mod->control.bits.vbat = 0;
     mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
 
     spin_unlock(&mod->lock);
@@ -846,9 +859,20 @@ static ssize_t gx_board_write(struct file *filp, const char __user *buff, size_t
             res = -ENODEV;
         }
     } else if (sscanf(cmd, "channel[%u].smart_card.enable(%u)", &chan, &value) == 2) {
-        iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * private_data->board->pos));
-        if (private_data->board->type == BOARD_TYPE_G8) {
-            iowrite8(value, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * (private_data->board->pos + 1)));
+        if (value) {
+            /* enable */
+            iowrite8(0, gx_cs3_base_ptr + MB_MODE_AUTONOM);
+            iowrite8(0, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * private_data->board->pos));
+            if (private_data->board->type == BOARD_TYPE_G8) {
+                iowrite8(0, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * (private_data->board->pos + 1)));
+            }
+        } else {
+            /* disable */
+            iowrite8(1, gx_cs3_base_ptr + MB_MODE_AUTONOM);
+            iowrite8(1, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * private_data->board->pos));
+            if (private_data->board->type == BOARD_TYPE_G8) {
+                iowrite8(1, gx_cs3_base_ptr + GX_MODE_AUTONOM + (0x0200 * (private_data->board->pos + 1)));
+            }
         }
         res = len;
     } else {
@@ -1304,6 +1328,8 @@ static int gx_driver_probe(struct platform_device *pdev)
 
             mod->set_control(mod->cbdata, mod->pos_on_board, mod->control.full);
             init_timer(&mod->at_poll_timer);
+
+            gx_gsm_mod_init_counters(mod->cbdata, mod->pos_on_board);
 
             spin_lock_init(&mod->at_lock);
 #ifdef TTY_PORT
