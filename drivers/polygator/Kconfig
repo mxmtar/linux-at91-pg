@@ -1,0 +1,7 @@
+
+menuconfig POLYGATOR
+	bool "Polygator Devices Support"
+	help
+	  G20 Polygator devices support.
+
+	  If unsure, say no.
